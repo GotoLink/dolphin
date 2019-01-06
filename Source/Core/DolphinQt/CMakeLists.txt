@@ -168,6 +168,8 @@ add_executable(dolphin-emu
   Config/VerifyWidget.h
   Debugger/BreakpointWidget.cpp
   Debugger/BreakpointWidget.h
+  Debugger/CodeTraceDialog.cpp
+  Debugger/CodeTraceDialog.h
   Debugger/CodeViewWidget.cpp
   Debugger/CodeViewWidget.h
   Debugger/CodeWidget.cpp
