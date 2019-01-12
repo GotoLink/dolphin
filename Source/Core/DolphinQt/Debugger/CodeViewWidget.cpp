@@ -61,11 +61,6 @@ CodeViewWidget::CodeViewWidget()
   connect(this, &CodeViewWidget::customContextMenuRequested, this, &CodeViewWidget::OnContextMenu);
   connect(this, &CodeViewWidget::itemSelectionChanged, this, &CodeViewWidget::OnSelectionChanged);
   connect(&Settings::Instance(), &Settings::DebugFontChanged, this, &QWidget::setFont);
-  connect(&Settings::Instance(), &Settings::EmulationStateChanged, this, [this] {
-    m_address = PC;
-    Update();
-  });
-
   connect(&Settings::Instance(), &Settings::ThemeChanged, this, &CodeViewWidget::Update);
 }
 
