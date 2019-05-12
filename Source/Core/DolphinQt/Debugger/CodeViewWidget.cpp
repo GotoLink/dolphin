@@ -26,6 +26,7 @@
 #include "Core/PowerPC/PPCAnalyst.h"
 #include "Core/PowerPC/PPCSymbolDB.h"
 #include "Core/PowerPC/PowerPC.h"
+#include "DolphinQt/Debugger/PatchInstructionDialog.h"
 #include "DolphinQt/Resources.h"
 #include "DolphinQt/Settings.h"
 
@@ -44,23 +45,21 @@ CodeViewWidget::CodeViewWidget()
   setSelectionBehavior(QAbstractItemView::SelectRows);
 
   setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-
-  for (int i = 0; i < columnCount(); i++)
-  {
-    horizontalHeader()->setSectionResizeMode(i, QHeaderView::Fixed);
-  }
+  setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
 
   verticalHeader()->hide();
   horizontalHeader()->hide();
-  horizontalHeader()->setStretchLastSection(true);
 
   setFont(Settings::Instance().GetDebugFont());
 
-  Update();
+  FontBasedSizing();
 
   connect(this, &CodeViewWidget::customContextMenuRequested, this, &CodeViewWidget::OnContextMenu);
   connect(this, &CodeViewWidget::itemSelectionChanged, this, &CodeViewWidget::OnSelectionChanged);
   connect(&Settings::Instance(), &Settings::DebugFontChanged, this, &QWidget::setFont);
+  connect(&Settings::Instance(), &Settings::DebugFontChanged, this,
+          &CodeViewWidget::FontBasedSizing);
+  
   connect(&Settings::Instance(), &Settings::ThemeChanged, this, &CodeViewWidget::Update);
 }
 
@@ -74,6 +73,16 @@ static u32 GetBranchFromAddress(u32 addr)
 
   std::string hex = disasm.substr(pos + 2);
   return std::stoul(hex, nullptr, 16);
+}
+
+void CodeViewWidget::FontBasedSizing()
+{
+  const QFontMetrics fm(Settings::Instance().GetDebugFont());
+  const int rowh = fm.height() + 1;
+  verticalHeader()->setMaximumSectionSize(rowh);
+  horizontalHeader()->setMinimumSectionSize(rowh + 5);
+  setColumnWidth(0, rowh + 5);
+  Update();
 }
 
 void CodeViewWidget::Update()
@@ -92,8 +101,11 @@ void CodeViewWidget::Update()
 
   setRowCount(rows);
 
+  const QFontMetrics fm(Settings::Instance().GetDebugFont());
+  const int rowh = fm.height() + 1;
+
   for (int i = 0; i < rows; i++)
-    setRowHeight(i, 24);
+    setRowHeight(i, rowh);
 
   u32 pc = PowerPC::ppcState.pc;
 
@@ -116,9 +128,17 @@ void CodeViewWidget::Update()
     std::string param = (split == std::string::npos ? "" : disas.substr(split + 1));
     std::string desc = PowerPC::debug_interface.GetDescription(addr);
 
-    auto* ins_item = new QTableWidgetItem(QString::fromStdString(ins));
-    auto* param_item = new QTableWidgetItem(QString::fromStdString(param));
-    auto* description_item = new QTableWidgetItem(QString::fromStdString(desc));
+    // Adds whitespace and a minimum size to ins and param. Helps to prevent frequent resizing while
+    // scrolling.
+    const QString ins_formatted =
+        QStringLiteral("%1").arg(QString::fromStdString(ins), -7, QLatin1Char(' '));
+    const QString param_formatted =
+        QStringLiteral("%1").arg(QString::fromStdString(param), -19, QLatin1Char(' '));
+    const QString desc_formatted = QStringLiteral("%1   ").arg(QString::fromStdString(desc));
+
+    auto* ins_item = new QTableWidgetItem(ins_formatted);
+    auto* param_item = new QTableWidgetItem(param_formatted);
+    auto* description_item = new QTableWidgetItem(desc_formatted);
 
     for (auto* item : {bp_item, addr_item, ins_item, param_item, description_item})
     {
@@ -156,8 +176,9 @@ void CodeViewWidget::Update()
 
     if (PowerPC::debug_interface.IsBreakpoint(addr))
     {
-      bp_item->setData(Qt::DecorationRole,
-                       Resources::GetScaledThemeIcon("debugger_breakpoint").pixmap(QSize(24, 24)));
+      bp_item->setData(
+          Qt::DecorationRole,
+          Resources::GetScaledThemeIcon("debugger_breakpoint").pixmap(QSize(rowh - 2, rowh - 2)));
     }
 
     setItem(i, 0, bp_item);
@@ -173,8 +194,6 @@ void CodeViewWidget::Update()
   }
 
   resizeColumnsToContents();
-  setColumnWidth(0, 24 + 5);
-
   g_symbolDB.FillInCallers();
 
   repaint();
@@ -458,17 +477,12 @@ void CodeViewWidget::OnReplaceInstruction()
   if (!read_result.valid)
     return;
 
-  bool good;
-  QString name = QInputDialog::getText(
-      this, tr("Change instruction"), tr("New instruction:"), QLineEdit::Normal,
-      QStringLiteral("%1").arg(read_result.hex, 8, 16, QLatin1Char('0')), &good);
+  PatchInstructionDialog dialog(this, addr, PowerPC::debug_interface.ReadInstruction(addr));
 
-  u32 code = name.toUInt(&good, 16);
-
-  if (good)
+  if (dialog.exec() == QDialog::Accepted)
   {
     PowerPC::debug_interface.UnsetPatch(addr);
-    PowerPC::debug_interface.SetPatch(addr, code);
+    PowerPC::debug_interface.SetPatch(addr, dialog.GetCode());
     Update();
   }
 }

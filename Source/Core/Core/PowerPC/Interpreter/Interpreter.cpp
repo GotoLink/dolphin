@@ -116,13 +116,13 @@ static int startTrace = 0;
 
 static void Trace(UGeckoInstruction& inst)
 {
-  std::string regs = "";
+  std::string regs;
   for (int i = 0; i < 32; i++)
   {
     regs += StringFromFormat("r%02d: %08x ", i, PowerPC::ppcState.gpr[i]);
   }
 
-  std::string fregs = "";
+  std::string fregs;
   for (int i = 0; i < 32; i++)
   {
     const auto& ps = PowerPC::ppcState.ps[i];
@@ -135,7 +135,7 @@ static void Trace(UGeckoInstruction& inst)
   DEBUG_LOG(POWERPC,
             "INTER PC: %08x SRR0: %08x SRR1: %08x CRval: %016" PRIx64 " FPSCR: %08x MSR: %08x LR: "
             "%08x %s %08x %s",
-            PC, SRR0, SRR1, PowerPC::ppcState.cr_val[0], FPSCR.Hex, MSR.Hex,
+            PC, SRR0, SRR1, PowerPC::ppcState.cr.fields[0], FPSCR.Hex, MSR.Hex,
             PowerPC::ppcState.spr[8], regs.c_str(), inst.hex, ppc_inst.c_str());
 }
 

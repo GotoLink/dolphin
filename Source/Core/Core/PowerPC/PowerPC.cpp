@@ -94,24 +94,6 @@ std::ostream& operator<<(std::ostream& os, CPUCore core)
   return os;
 }
 
-u32 CompactCR()
-{
-  u32 new_cr = 0;
-  for (u32 i = 0; i < 8; i++)
-  {
-    new_cr |= GetCRField(i) << (28 - i * 4);
-  }
-  return new_cr;
-}
-
-void ExpandCR(u32 cr)
-{
-  for (u32 i = 0; i < 8; i++)
-  {
-    SetCRField(i, (cr >> (28 - i * 4)) & 0xF);
-  }
-}
-
 void DoState(PointerWrap& p)
 {
   // some of this code has been disabled, because
@@ -127,7 +109,7 @@ void DoState(PointerWrap& p)
   p.DoArray(ppcState.gpr);
   p.Do(ppcState.pc);
   p.Do(ppcState.npc);
-  p.DoArray(ppcState.cr_val);
+  p.DoArray(ppcState.cr.fields);
   p.Do(ppcState.msr);
   p.Do(ppcState.fpscr);
   p.Do(ppcState.Exceptions);
@@ -183,8 +165,11 @@ static void ResetRegisters()
   ppcState.pc = 0;
   ppcState.npc = 0;
   ppcState.Exceptions = 0;
-  for (auto& v : ppcState.cr_val)
+  for (auto& v : ppcState.cr.fields)
+  {
     v = 0x8000000000000001;
+  }
+  SetXER({});
 
   DBATUpdated();
   IBATUpdated();
@@ -228,13 +213,13 @@ static void InitializeCPUCore(CPUCore cpu_core)
 const std::vector<CPUCore>& AvailableCPUCores()
 {
   static const std::vector<CPUCore> cpu_cores = {
-      CPUCore::Interpreter,
-      CPUCore::CachedInterpreter,
 #ifdef _M_X86_64
       CPUCore::JIT64,
 #elif defined(_M_ARM_64)
       CPUCore::JITARM64,
 #endif
+      CPUCore::CachedInterpreter,
+      CPUCore::Interpreter,
   };
 
   return cpu_cores;
@@ -614,6 +599,12 @@ void CheckBreakPoints()
     if (PowerPC::breakpoints.IsTempBreakPoint(PC))
       PowerPC::breakpoints.Remove(PC);
   }
+}
+
+void PowerPCState::SetSR(u32 index, u32 value)
+{
+  DEBUG_LOG(POWERPC, "%08x: MMU: Segment register %i set to %08x", pc, index, value);
+  sr[index] = value;
 }
 
 // FPSCR update functions
