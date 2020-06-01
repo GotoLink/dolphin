@@ -81,6 +81,7 @@ public:
   void RunToBreakpoint() override;
   u32 GetColor(u32 address) const override;
   std::string GetDescription(u32 address) const override;
+  u32 GetMemoryAddressFromInstruction(std::string instruction) const;
 
   void Clear() override;
 
