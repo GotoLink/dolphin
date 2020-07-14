@@ -1,4 +1,4 @@
-// Copyright 2017 Dolphin Emulator Project
+// Copyright 2020 Dolphin Emulator Project
 // Licensed under GPLv2+
 // Refer to the license.txt file included.
 
@@ -8,6 +8,8 @@
 
 #include "Common/CommonTypes.h"
 
+#include "Common/Debug/CodeTrace.h"
+
 class CodeWidget;
 class QCheckBox;
 class QLineEdit;
@@ -16,25 +18,6 @@ class QComboBox;
 class QListWidget;
 class QListWidgetItem;
 class QSpinBox;
-
-struct CodeTrace
-{
-  u32 address = 0;
-  std::string instruction = "";
-  std::string reg0 = "";
-  std::string reg1 = "";
-  std::string reg2 = "";
-  u32 memory_dest = 0;
-  bool is_store = false;
-  bool is_load = false;
-};
-
-struct TraceOutput
-{
-  u32 address;
-  u32 mem_addr = 0;
-  std::string instruction;
-};
 
 class CodeTraceDialog : public QDialog
 {
@@ -48,17 +31,13 @@ private:
   void CreateWidgets();
   void ConnectWidgets();
   void ClearAll();
-  void OnRunTrace(bool checked);
+  void OnRecordTrace(bool checked);
+  std::vector<TraceOutput> CodePath(u32 start, u32 end, u32 results_limit);
+  void DisplayTrace();
   void OnChangeRange();
   void UpdateBreakpoints();
   void InfoDisp();
-  void SaveInstruction();
-  bool UpdateIterator(std::vector<CodeTrace>::iterator& begin_itr,
-                      std::vector<CodeTrace>::iterator& end_itr);
-  void ForwardTrace();
-  void Backtrace();
-  void CodePath();
-  void DisplayTrace();
+
   void OnContextMenu();
 
   QListWidget* m_output_list;
@@ -69,20 +48,21 @@ private:
   QCheckBox* m_verbose;
   QCheckBox* m_clear_on_loop;
   QCheckBox* m_change_range;
-  QLabel* m_recorded_size;
-  QLabel* m_results_size;
-  QSpinBox* m_record_limit_input;
   QPushButton* m_reprocess;
-  QSpinBox* m_result_limit_input;
-  QPushButton* m_run_trace;
+  QLabel* m_record_limit_label;
+  QLabel* m_results_limit_label;
+  QSpinBox* m_record_limit_input;
+  QSpinBox* m_results_limit_input;
+
+  QPushButton* m_record_trace;
   CodeWidget* m_parent;
 
-  std::vector<CodeTrace> m_code_trace;
+  CodeTrace CT;
+  std::vector<TraceOutput> m_code_trace;
   std::vector<TraceOutput> m_trace_out;
-  std::vector<std::string> m_reg;
-  std::vector<u32> m_mem;
 
-  size_t m_record_limit = 200000;
-  size_t m_results_limit = 2000;
+  size_t m_record_limit = 150000;
   QString m_error_msg;
+
+  bool m_recording = false;
 };
