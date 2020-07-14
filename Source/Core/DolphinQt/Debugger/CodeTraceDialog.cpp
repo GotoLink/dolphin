@@ -4,7 +4,6 @@
 
 #include "DolphinQt/Debugger/CodeTraceDialog.h"
 
-#include <chrono>
 #include <optional>
 #include <regex>
 #include <vector>
@@ -27,14 +26,11 @@
 #include <QVBoxLayout>
 
 #include "Common/Debug/CodeTrace.h"
-#include "Common/Event.h"
 #include "Common/StringUtil.h"
 #include "Core/Debugger/PPCDebugInterface.h"
 #include "Core/HW/CPU.h"
-#include "Core/PowerPC/MMU.h"
 #include "Core/PowerPC/PPCSymbolDB.h"
 #include "Core/PowerPC/PowerPC.h"
-#include "DolphinQt/Host.h"
 #include "DolphinQt/Settings.h"
 
 #include "DolphinQt/Debugger/CodeWidget.h"
@@ -246,7 +242,7 @@ void CodeTraceDialog::OnRecordTrace(bool checked)
   CodeTraceDialog::DisplayTrace();
 }
 
-std::vector<TraceOutput> CodeTraceDialog::CodePath(u32 start, u32 end, u32 results_limit)
+const std::vector<TraceOutput> CodeTraceDialog::CodePath(u32 start, u32 end, u32 results_limit)
 {
   // Shows entire trace without filtering if target input is blank.
   std::vector<TraceOutput> tmp_out;
@@ -295,11 +291,8 @@ std::vector<TraceOutput> CodeTraceDialog::CodePath(u32 start, u32 end, u32 resul
   }
 }
 
-void CodeTraceDialog::DisplayTrace()
+const std::vector<TraceOutput> CodeTraceDialog::GetTraceResults()
 {
-  m_output_list->clear();
-  u32 results_limit = m_results_limit_input->value();
-
   // Setup start and end for a changed range, 0 means use full range.
   u32 start = 0;
   u32 end = 0;
@@ -338,7 +331,7 @@ void CodeTraceDialog::DisplayTrace()
     if (!ok)
     {
       new QListWidgetItem(tr("Memory Address input error"), m_output_list);
-      return;
+      return std::vector<TraceOutput>();
     }
   }
   else if (m_trace_target->text().size() < 5)
@@ -351,26 +344,27 @@ void CodeTraceDialog::DisplayTrace()
   else
   {
     new QListWidgetItem(tr("Register input error"), m_output_list);
+    return std::vector<TraceOutput>();
   }
 
   // Either use CodePath to display the full trace (limited by results_limit) or track a value
-  // through the full trace using Forward/Back Trace.
-  std::vector<TraceOutput> trace_out;
+  // through the full trace using a Forward/Back Trace.
+  u32 results_limit = m_results_limit_input->value();
+  bool verbose = m_verbose->isChecked();
 
   if (m_trace_target->text().isEmpty())
-  {
-    trace_out = CodePath(start, end, results_limit);
-  }
+    return CodePath(start, end, results_limit);
   else if (m_backtrace->isChecked())
-  {
-    trace_out = CT.Backtrace(&m_code_trace, track_reg, track_mem, start, end, results_limit,
-                             m_verbose->isChecked());
-  }
+    return CT.Backtrace(&m_code_trace, track_reg, track_mem, start, end, results_limit, verbose);
   else
-  {
-    trace_out = CT.ForwardTrace(&m_code_trace, track_reg, track_mem, start, end, results_limit,
-                                m_verbose->isChecked());
-  }
+    return CT.ForwardTrace(&m_code_trace, track_reg, track_mem, start, end, results_limit, verbose);
+}
+
+void CodeTraceDialog::DisplayTrace()
+{
+  m_output_list->clear();
+
+  const std::vector<TraceOutput> trace_out = GetTraceResults();
 
   // Errors to display
   if (!m_error_msg.isEmpty())
@@ -379,7 +373,7 @@ void CodeTraceDialog::DisplayTrace()
   if (m_code_trace.size() >= m_record_limit)
     new QListWidgetItem(tr("Trace max limit reached, backtrace won't work."), m_output_list);
 
-  if (trace_out.size() >= results_limit)
+  if (trace_out.size() >= m_results_limit_input->value())
     new QListWidgetItem(tr("Max output size reached, stopped early"), m_output_list);
 
   // Update UI
@@ -399,6 +393,7 @@ void CodeTraceDialog::DisplayTrace()
     fix_sym.replace(QStringLiteral("\t"), QStringLiteral("  "));
 
     std::regex_search(out.instruction, match, reg);
+    // May need to modify this one.
     std::string match4 = match.str(4);
 
     if (out.memory_target)

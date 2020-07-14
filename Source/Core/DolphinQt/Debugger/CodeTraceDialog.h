@@ -32,7 +32,8 @@ private:
   void ConnectWidgets();
   void ClearAll();
   void OnRecordTrace(bool checked);
-  std::vector<TraceOutput> CodePath(u32 start, u32 end, u32 results_limit);
+  const std::vector<TraceOutput> CodePath(u32 start, u32 end, u32 results_limit);
+  const std::vector<TraceOutput> GetTraceResults();
   void DisplayTrace();
   void OnChangeRange();
   void UpdateBreakpoints();
@@ -59,7 +60,6 @@ private:
 
   CodeTrace CT;
   std::vector<TraceOutput> m_code_trace;
-  std::vector<TraceOutput> m_trace_out;
 
   size_t m_record_limit = 150000;
   QString m_error_msg;

@@ -7,14 +7,9 @@
 #include <chrono>
 #include <regex>
 
-#include <fmt/format.h>
-
 #include "Common/Event.h"
-#include "Common/StringUtil.h"
 #include "Core/Debugger/PPCDebugInterface.h"
 #include "Core/HW/CPU.h"
-#include "Core/PowerPC/MMU.h"
-#include "Core/PowerPC/PPCSymbolDB.h"
 #include "Core/PowerPC/PowerPC.h"
 
 bool CodeTrace::CompareInstruction(std::string instruction, std::vector<std::string> type_compare)
@@ -127,7 +122,6 @@ bool CodeTrace::RecordCodeTrace(std::vector<TraceOutput>* output_trace, size_t r
   PowerPC::SetMode(PowerPC::CoreMode::Interpreter);
   Common::Event sync_event;
 
-  UGeckoInstruction inst = PowerPC::HostRead_Instruction(PC);
   SaveInstruction(output_trace);
 
   do
