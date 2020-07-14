@@ -30,8 +30,6 @@ bool CodeTrace::CompareInstruction(std::string instruction, std::vector<std::str
 
 bool CodeTrace::IsInstructionLoadStore(std::string instruction)
 {
-  // Could add check for context address being near PC, because we need gprs to be correct for the
-  // load/store.
   return ((instruction.compare(0, 2, "st") == 0 || instruction.compare(0, 1, "l") == 0 ||
            instruction.compare(0, 5, "psq_l") == 0 || instruction.compare(0, 5, "psq_s") == 0) &&
           instruction.compare(0, 2, "li") != 0);
@@ -93,8 +91,11 @@ void CodeTrace::SaveInstruction(std::vector<TraceOutput>* output_trace)
   tmp_output.instruction = tmp;
   tmp_output.address = PC;
 
+  // Should never fail, but if it does it's hard to pass out an error message from here. Memory
+  // targets should never be 0, so setting to 0 suggests an error happened.
   if (IsInstructionLoadStore(tmp_output.instruction))
-    tmp_output.memory_target = PowerPC::debug_interface.GetMemoryAddressFromInstruction(tmp);
+    tmp_output.memory_target =
+        PowerPC::debug_interface.GetMemoryAddressFromInstruction(tmp).value_or(0);
 
   output_trace->push_back(tmp_output);
 }
