@@ -36,17 +36,18 @@ public:
   const std::vector<TraceOutput> ForwardTrace(std::vector<TraceOutput>* full_trace,
                                               std::optional<std::string> track_reg,
                                               std::optional<u32> track_mem, u32 begin_address,
-                                              u32 end_address, u32 results_limit, bool verbose);
+                                              u32 end_address, u32 results_limit,
+                                              bool verbose) const;
   const std::vector<TraceOutput> Backtrace(std::vector<TraceOutput>* full_trace,
                                            std::optional<std::string> track_reg,
                                            std::optional<u32> track_mem, u32 begin_address,
-                                           u32 end_address, u32 results_limit, bool verbose);
+                                           u32 end_address, u32 results_limit, bool verbose) const;
 
 private:
-  bool CompareInstruction(std::string instruction, std::vector<std::string> type_compare);
-  bool IsInstructionLoadStore(std::string instruction);
-  const InstructionAttributes GetInstructionAttributes(TraceOutput line);
-  void SaveInstruction(std::vector<TraceOutput>* output_trace);
+  bool CompareInstruction(std::string instruction, std::vector<std::string> type_compare) const;
+  bool IsInstructionLoadStore(std::string instruction) const;
+  const InstructionAttributes GetInstructionAttributes(TraceOutput line) const;
+  void SaveInstruction(std::vector<TraceOutput>* output_trace) const;
 
   bool m_recording = false;
 };

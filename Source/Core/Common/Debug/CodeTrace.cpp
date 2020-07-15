@@ -12,7 +12,8 @@
 #include "Core/HW/CPU.h"
 #include "Core/PowerPC/PowerPC.h"
 
-bool CodeTrace::CompareInstruction(std::string instruction, std::vector<std::string> type_compare)
+bool CodeTrace::CompareInstruction(std::string instruction,
+                                   std::vector<std::string> type_compare) const
 {
   for (auto& s : type_compare)
   {
@@ -23,14 +24,14 @@ bool CodeTrace::CompareInstruction(std::string instruction, std::vector<std::str
   return false;
 }
 
-bool CodeTrace::IsInstructionLoadStore(std::string instruction)
+bool CodeTrace::IsInstructionLoadStore(std::string instruction) const
 {
   return ((instruction.compare(0, 2, "st") == 0 || instruction.compare(0, 1, "l") == 0 ||
            instruction.compare(0, 5, "psq_l") == 0 || instruction.compare(0, 5, "psq_s") == 0) &&
           instruction.compare(0, 2, "li") != 0);
 }
 
-const InstructionAttributes CodeTrace::GetInstructionAttributes(TraceOutput instruction)
+const InstructionAttributes CodeTrace::GetInstructionAttributes(TraceOutput instruction) const
 {
   InstructionAttributes tmp_attributes;
   tmp_attributes.instruction = instruction.instruction;
@@ -79,7 +80,7 @@ const InstructionAttributes CodeTrace::GetInstructionAttributes(TraceOutput inst
   return tmp_attributes;
 }
 
-void CodeTrace::SaveInstruction(std::vector<TraceOutput>* output_trace)
+void CodeTrace::SaveInstruction(std::vector<TraceOutput>* output_trace) const
 {
   TraceOutput tmp_output;
   std::string tmp = PowerPC::debug_interface.Disassemble(PC);
@@ -151,7 +152,7 @@ bool CodeTrace::RecordCodeTrace(std::vector<TraceOutput>* output_trace, size_t r
 const std::vector<TraceOutput>
 CodeTrace::ForwardTrace(std::vector<TraceOutput>* full_trace, std::optional<std::string> track_reg,
                         std::optional<u32> track_mem, u32 begin_address = 0, u32 end_address = 0,
-                        u32 results_limit = 1000, bool verbose = false)
+                        u32 results_limit = 1000, bool verbose = false) const
 {
   std::vector<TraceOutput> trace_output;
   std::vector<std::string> reg_tracked;
@@ -285,11 +286,10 @@ CodeTrace::ForwardTrace(std::vector<TraceOutput>* full_trace, std::optional<std:
   return trace_output;
 }
 
-const std::vector<TraceOutput> CodeTrace::Backtrace(std::vector<TraceOutput>* full_trace,
-                                                    std::optional<std::string> track_reg,
-                                                    std::optional<u32> track_mem,
-                                                    u32 start_address = 0, u32 end_address = 0,
-                                                    u32 results_limit = 1000, bool verbose = false)
+const std::vector<TraceOutput>
+CodeTrace::Backtrace(std::vector<TraceOutput>* full_trace, std::optional<std::string> track_reg,
+                     std::optional<u32> track_mem, u32 start_address = 0, u32 end_address = 0,
+                     u32 results_limit = 1000, bool verbose = false) const
 {
   std::vector<TraceOutput> trace_output;
   const std::vector<std::string> exclude{"dc", "ic", "mt", "c", "fc"};
