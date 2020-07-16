@@ -77,11 +77,11 @@ void CodeTraceDialog::CreateWidgets()
   input_layout->addWidget(m_bp2);
 
   auto* boxes_layout = new QHBoxLayout;
+  m_reprocess = new QPushButton(tr("Track Target"));
   m_backtrace = new QCheckBox(tr("Backtrace"));
   m_verbose = new QCheckBox(tr("Verbose"));
   m_clear_on_loop = new QCheckBox(tr("Reset on loopback"));
   m_record_limit_label = new QLabel(tr("Maximum to record"));
-  m_reprocess = new QPushButton(tr("Track Target"));
   m_record_limit_input = new QSpinBox();
   m_record_limit_input->setMinimum(1000);
   m_record_limit_input->setMaximum(200000);
@@ -151,8 +151,11 @@ void CodeTraceDialog::ConnectWidgets()
   connect(m_reprocess, &QPushButton::pressed, this, &CodeTraceDialog::DisplayTrace);
   connect(m_change_range, &QCheckBox::toggled, this, &CodeTraceDialog::OnChangeRange);
   connect(m_output_list, &QListWidget::itemClicked, m_parent, [this](QListWidgetItem* item) {
-    m_parent->SetAddress(item->data(ADDRESS_ROLE).toUInt(),
-                         CodeViewWidget::SetAddressUpdate::WithUpdate);
+    if (m_record_trace->isChecked())
+    {
+      m_parent->SetAddress(item->data(ADDRESS_ROLE).toUInt(),
+                           CodeViewWidget::SetAddressUpdate::WithUpdate);
+    }
   });
   connect(m_output_list, &CodeTraceDialog::customContextMenuRequested, this,
           &CodeTraceDialog::OnContextMenu);

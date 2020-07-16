@@ -118,7 +118,7 @@ bool CodeTrace::RecordCodeTrace(std::vector<TraceOutput>* output_trace, size_t r
 
   // Keep stepping until the end_bp or timeout
   using clock = std::chrono::steady_clock;
-  clock::time_point timeout = clock::now() + std::chrono::seconds(time_limit);
+  clock::time_point timeout = clock::now() + std::chrono::seconds(5);
   PowerPC::CoreMode old_mode = PowerPC::GetMode();
   PowerPC::SetMode(PowerPC::CoreMode::Interpreter);
   Common::Event sync_event;
