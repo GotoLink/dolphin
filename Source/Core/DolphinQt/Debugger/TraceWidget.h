@@ -4,13 +4,14 @@
 
 #pragma once
 
-#include <QDialog>
+#include <QDockWidget>
 
 #include "Common/CommonTypes.h"
 
 #include "Common/Debug/CodeTrace.h"
 
-class CodeWidget;
+class QCloseEvent;
+class QPushButton;
 class QCheckBox;
 class QLineEdit;
 class QLabel;
@@ -19,13 +20,21 @@ class QListWidget;
 class QListWidgetItem;
 class QSpinBox;
 
-class CodeTraceDialog : public QDialog
+class TraceWidget : public QDockWidget
 {
   Q_OBJECT
 public:
-  explicit CodeTraceDialog(CodeWidget* parent);
+  explicit TraceWidget(QWidget* parent = nullptr);
+  ~TraceWidget();
 
-  void reject() override;
+  void UpdateBreakpoints();
+
+signals:
+  void ShowCode(u32 address);
+  void ShowMemory(u32 address);
+
+protected:
+  void closeEvent(QCloseEvent*) override;
 
 private:
   void CreateWidgets();
@@ -36,7 +45,6 @@ private:
   const std::vector<TraceOutput> GetTraceResults();
   void DisplayTrace();
   void OnChangeRange();
-  void UpdateBreakpoints();
   void InfoDisp();
 
   void OnContextMenu();
@@ -56,7 +64,6 @@ private:
   QSpinBox* m_results_limit_input;
 
   QPushButton* m_record_trace;
-  CodeWidget* m_parent;
 
   CodeTrace CT;
   std::vector<TraceOutput> m_code_trace;

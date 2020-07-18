@@ -8,7 +8,6 @@
 #include <QString>
 
 #include "Common/CommonTypes.h"
-#include "DolphinQt/Debugger/CodeTraceDialog.h"
 #include "DolphinQt/Debugger/CodeViewWidget.h"
 
 class QCloseEvent;
@@ -38,7 +37,6 @@ public:
   void ShowPC();
   void SetPC();
 
-  void OnTrace();
   void ToggleBreakpoint();
   void AddBreakpoint();
   void SetAddress(u32 address, CodeViewWidget::SetAddressUpdate update);
@@ -67,10 +65,8 @@ private:
   void closeEvent(QCloseEvent*) override;
   void showEvent(QShowEvent* event) override;
 
-  CodeTraceDialog* trace_dialog = nullptr;
   QLineEdit* m_search_address;
   QLineEdit* m_search_symbols;
-  QPushButton* m_code_trace;
   QListWidget* m_callstack_list;
   QListWidget* m_symbols_list;
   QListWidget* m_function_calls_list;

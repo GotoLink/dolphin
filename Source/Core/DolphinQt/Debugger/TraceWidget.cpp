@@ -2,7 +2,7 @@
 // Licensed under GPLv2+
 // Refer to the license.txt file included.
 
-#include "DolphinQt/Debugger/CodeTraceDialog.h"
+#include "DolphinQt/Debugger/TraceWidget.h"
 
 #include <optional>
 #include <regex>
@@ -15,15 +15,18 @@
 #include <QClipboard>
 #include <QComboBox>
 #include <QFontDatabase>
-#include <QHBoxLayout>
+#include <QGroupBox>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSpacerItem>
 #include <QSpinBox>
+#include <QSplitter>
 #include <QVBoxLayout>
+#include <QWidget>
 
 #include "Common/Debug/CodeTrace.h"
 #include "Common/StringUtil.h"
@@ -31,38 +34,62 @@
 #include "Core/HW/CPU.h"
 #include "Core/PowerPC/PPCSymbolDB.h"
 #include "Core/PowerPC/PowerPC.h"
+#include "DolphinQt/Host.h"
 #include "DolphinQt/Settings.h"
-
-#include "DolphinQt/Debugger/CodeWidget.h"
 
 constexpr int ADDRESS_ROLE = Qt::UserRole;
 constexpr int MEM_ADDRESS_ROLE = Qt::UserRole + 1;
+#define ElidedText(text)                                                                           \
+  fontMetrics().elidedText(text, Qt::ElideRight, m_bp2->lineEdit()->rect().width() - 5)
 
-CodeTraceDialog::CodeTraceDialog(CodeWidget* parent) : QDialog(parent), m_parent(parent)
+TraceWidget::TraceWidget(QWidget* parent) : QDockWidget(parent)
 {
   setWindowTitle(tr("Trace"));
+  setObjectName(QStringLiteral("trace"));
+
+  setHidden(!Settings::Instance().IsTraceVisible() || !Settings::Instance().IsDebugModeEnabled());
+
+  setAllowedAreas(Qt::AllDockWidgetAreas);
+
   CreateWidgets();
+
+  auto& settings = Settings::GetQSettings();
+
+  restoreGeometry(settings.value(QStringLiteral("tracewidget/geometry")).toByteArray());
+  // macOS: setHidden() needs to be evaluated before setFloating() for proper window presentation
+  // according to Settings
+  setFloating(settings.value(QStringLiteral("tracewidget/floating")).toBool());
+
+  connect(&Settings::Instance(), &Settings::TraceVisibilityChanged,
+          [this](bool visible) { setHidden(!visible); });
+
+  connect(&Settings::Instance(), &Settings::DebugModeToggled,
+          [this](bool enabled) { setHidden(!enabled || !Settings::Instance().IsTraceVisible()); });
+
+  // connect(&Settings::Instance(), &Settings::EmulationStateChanged, this, &TraceWidget::Update);
+
   ConnectWidgets();
   UpdateBreakpoints();
 }
 
-void CodeTraceDialog::reject()
+TraceWidget::~TraceWidget()
 {
-  // Make sure to free memory and reset info message.
-  ClearAll();
   auto& settings = Settings::GetQSettings();
-  settings.setValue(QStringLiteral("tracedialog/geometry"), saveGeometry());
-  QDialog::reject();
+  // Not sure if we want to clear it.
+  // ClearAll();
+  settings.setValue(QStringLiteral("tracewidget/geometry"), saveGeometry());
+  settings.setValue(QStringLiteral("tracewidget/floating"), isFloating());
 }
 
-void CodeTraceDialog::CreateWidgets()
+void TraceWidget::closeEvent(QCloseEvent*)
 {
-  auto& settings = Settings::GetQSettings();
-  restoreGeometry(settings.value(QStringLiteral("tracedialog/geometry")).toByteArray());
-  auto* input_layout = new QHBoxLayout;
-  m_trace_target = new QLineEdit();
-  m_trace_target->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Maximum);
-  m_trace_target->setPlaceholderText(tr("Register or Memory"));
+  Settings::Instance().SetTraceVisible(false);
+}
+
+void TraceWidget::CreateWidgets()
+{
+  auto* input_layout = new QVBoxLayout;
+
   m_bp1 = new QComboBox();
   m_bp1->setEditable(true);
   // i18n: Here, PC is an acronym for program counter, not personal computer.
@@ -71,16 +98,11 @@ void CodeTraceDialog::CreateWidgets()
   m_bp2 = new QComboBox();
   m_bp2->setEditable(true);
   m_bp2->setCurrentText(tr("Stop BP or address"));
+  m_record_trace = new QPushButton(tr("Record Trace"));
+  m_record_trace->setCheckable(true);
 
-  input_layout->addWidget(m_trace_target);
-  input_layout->addWidget(m_bp1);
-  input_layout->addWidget(m_bp2);
-
-  auto* boxes_layout = new QHBoxLayout;
-  m_reprocess = new QPushButton(tr("Track Target"));
-  m_backtrace = new QCheckBox(tr("Backtrace"));
-  m_verbose = new QCheckBox(tr("Verbose"));
-  m_clear_on_loop = new QCheckBox(tr("Reset on loopback"));
+  auto* record_options_box = new QGroupBox(tr("Recording options"));
+  auto* record_options_layout = new QGridLayout;
   m_record_limit_label = new QLabel(tr("Maximum to record"));
   m_record_limit_input = new QSpinBox();
   m_record_limit_input->setMinimum(1000);
@@ -88,6 +110,23 @@ void CodeTraceDialog::CreateWidgets()
   m_record_limit_input->setValue(10000);
   m_record_limit_input->setSingleStep(10000);
   m_record_limit_input->setMinimumSize(70, 0);
+  m_clear_on_loop = new QCheckBox(tr("Reset on loopback"));
+
+  record_options_layout->addWidget(m_record_limit_label, 0, 0);
+  record_options_layout->addWidget(m_record_limit_input, 0, 1);
+  record_options_layout->addWidget(m_clear_on_loop, 1, 0, 1, 2);
+  record_options_box->setLayout(record_options_layout);
+
+  auto* trace_target_layout = new QHBoxLayout;
+  m_reprocess = new QPushButton(tr("Track Target"));
+  m_trace_target = new QLineEdit();
+  m_trace_target->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Maximum);
+  m_trace_target->setPlaceholderText(tr("Reg or Mem"));
+  trace_target_layout->addWidget(m_reprocess);
+  trace_target_layout->addWidget(m_trace_target);
+
+  auto* results_options_box = new QGroupBox(tr("Output Options"));
+  auto* results_options_layout = new QGridLayout;
   m_results_limit_label = new QLabel(tr("Maximum results"));
   m_results_limit_input = new QSpinBox();
   m_results_limit_input->setMinimum(100);
@@ -96,75 +135,92 @@ void CodeTraceDialog::CreateWidgets()
   m_results_limit_input->setSingleStep(250);
   m_results_limit_input->setMinimumSize(50, 0);
 
-  auto* record_layout = new QHBoxLayout;
-  m_record_trace = new QPushButton(tr("Record Trace"));
-  m_record_trace->setCheckable(true);
+  m_backtrace = new QCheckBox(tr("Backtrace"));
+  m_verbose = new QCheckBox(tr("Verbose"));
   m_change_range = new QCheckBox(tr("Change Range"));
   m_change_range->setDisabled(true);
 
-  boxes_layout->addWidget(m_reprocess);
-  boxes_layout->addWidget(m_backtrace);
-  boxes_layout->addWidget(m_verbose);
-  boxes_layout->addWidget(m_change_range);
-  boxes_layout->addWidget(m_results_limit_label);
-  boxes_layout->addWidget(m_results_limit_input);
-  boxes_layout->addItem(new QSpacerItem(1000, 0, QSizePolicy::Expanding, QSizePolicy::Maximum));
-  boxes_layout->addWidget(m_record_limit_label);
-  boxes_layout->addWidget(m_record_limit_input);
-  boxes_layout->addWidget(m_clear_on_loop);
-  boxes_layout->addWidget(m_record_trace);
+  results_options_layout->addWidget(m_results_limit_label, 0, 0);
+  results_options_layout->addWidget(m_results_limit_input, 0, 1, 1, 2);
+  results_options_layout->addWidget(m_backtrace, 1, 0);
+  results_options_layout->addWidget(m_verbose, 1, 1);
+  results_options_layout->addWidget(m_change_range, 2, 0);
+
+  results_options_box->setLayout(results_options_layout);
+
+  input_layout->setSpacing(1);
+  input_layout->addWidget(m_bp1);
+  input_layout->addWidget(m_bp2);
+  input_layout->addItem(new QSpacerItem(1, 32));
+  input_layout->addWidget(m_record_trace);
+  input_layout->addWidget(record_options_box);
+  input_layout->addItem(new QSpacerItem(1, 32));
+  input_layout->addLayout(trace_target_layout);
+  input_layout->addWidget(results_options_box);
+  input_layout->addItem(new QSpacerItem(0, 0, QSizePolicy::Maximum, QSizePolicy::Expanding));
 
   m_output_list = new QListWidget();
-  m_output_list->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+  m_output_list->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::MinimumExpanding);
+  m_output_list->setSpacing(1);
+  m_output_list->setWordWrap(true);
 
-  // QFont font(QStringLiteral("Monospace"));
-  // font.setStyleHint(QFont::TypeWriter);
+  // Fixed width font to max table line up.
   QFont fixedfont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
   fixedfont.setPointSize(11);
   m_output_list->setFont(fixedfont);
   m_output_list->setContextMenuPolicy(Qt::CustomContextMenu);
 
-  auto* actions_layout = new QHBoxLayout();
-  actions_layout->addLayout(boxes_layout);
-  actions_layout->addItem(new QSpacerItem(1000, 0, QSizePolicy::Expanding, QSizePolicy::Maximum));
-  actions_layout->addLayout(record_layout);
+  auto* splitter = new QSplitter(Qt::Horizontal);
+  auto* side_bar_widget = new QWidget;
+  auto* sidebar_scroll = new QScrollArea;
+  side_bar_widget->setLayout(input_layout);
+  sidebar_scroll->setWidget(side_bar_widget);
+  sidebar_scroll->setWidgetResizable(true);
+  sidebar_scroll->setFixedWidth(225);
 
-  auto* layout = new QVBoxLayout();
-  layout->addLayout(input_layout);
-  layout->addLayout(actions_layout);
-  layout->addWidget(m_output_list);
+  auto* layout = new QHBoxLayout();
+  splitter->addWidget(m_output_list);
+  splitter->addWidget(sidebar_scroll);
+  layout->addWidget(splitter);
 
   InfoDisp();
 
-  setLayout(layout);
+  auto* widget = new QWidget;
+  widget->setLayout(layout);
+  setWidget(widget);
 }
 
-void CodeTraceDialog::ConnectWidgets()
+void TraceWidget::ConnectWidgets()
 {
-  connect(m_parent, &CodeWidget::BreakpointsChanged, this, &CodeTraceDialog::UpdateBreakpoints);
   connect(m_record_trace, &QPushButton::clicked, [this](bool record) {
     if (record)
       OnRecordTrace(record);
     else
       ClearAll();
   });
-  connect(m_reprocess, &QPushButton::pressed, this, &CodeTraceDialog::DisplayTrace);
-  connect(m_change_range, &QCheckBox::toggled, this, &CodeTraceDialog::OnChangeRange);
-  connect(m_output_list, &QListWidget::itemClicked, m_parent, [this](QListWidgetItem* item) {
+  connect(m_reprocess, &QPushButton::clicked, this, &TraceWidget::DisplayTrace);
+  connect(m_change_range, &QCheckBox::clicked, this, &TraceWidget::OnChangeRange);
+  // When clicking on an item, we want the code widget to update without hiding the trace widget.
+  // Useful when both widgets are visible. There's also a right-click option to switch to the code
+  // tab.
+  connect(m_output_list, &QListWidget::itemClicked, [this](QListWidgetItem* item) {
     if (m_record_trace->isChecked())
     {
-      m_parent->SetAddress(item->data(ADDRESS_ROLE).toUInt(),
-                           CodeViewWidget::SetAddressUpdate::WithUpdate);
+      emit ShowCode(item->data(ADDRESS_ROLE).toUInt());
+      raise();
+      activateWindow();
     }
   });
-  connect(m_output_list, &CodeTraceDialog::customContextMenuRequested, this,
-          &CodeTraceDialog::OnContextMenu);
+  connect(m_output_list, &TraceWidget::customContextMenuRequested, this,
+          &TraceWidget::OnContextMenu);
 }
 
-void CodeTraceDialog::ClearAll()
+void TraceWidget::ClearAll()
 {
   std::vector<TraceOutput>().swap(m_code_trace);
   m_output_list->clear();
+  m_output_list->setWordWrap(true);
+  m_bp1->clear();
   m_bp1->setDisabled(true);
   // i18n: Here, PC is an acronym for program counter, not personal computer.
   m_bp1->setCurrentText(tr("Uses PC as trace starting point."));
@@ -173,13 +229,14 @@ void CodeTraceDialog::ClearAll()
   m_change_range->setDisabled(true);
   m_record_trace->setText(tr("Record Trace"));
   m_record_trace->setChecked(false);
+  m_record_limit_input->setDisabled(false);
   m_record_limit_label->setText(tr("Maximum to record"));
   m_results_limit_label->setText(tr("Maximum results"));
   UpdateBreakpoints();
   InfoDisp();
 }
 
-void CodeTraceDialog::OnRecordTrace(bool checked)
+void TraceWidget::OnRecordTrace(bool checked)
 {
   m_record_trace->setChecked(false);
 
@@ -219,18 +276,23 @@ void CodeTraceDialog::OnRecordTrace(bool checked)
   // Record actual start and end into combo boxes.
   m_bp1->setDisabled(false);
   m_bp1->clear();
+
   QString instr = QString::fromStdString(PowerPC::debug_interface.Disassemble(start_bp));
   instr.replace(QStringLiteral("\t"), QStringLiteral(" "));
+
   m_bp1->addItem(
-      QStringLiteral("Trace Begin   %1 : %2").arg(start_bp, 8, 16, QLatin1Char('0')).arg(instr),
+      ElidedText(QStringLiteral("Start %1 : %2").arg((end_bp), 8, 16, QLatin1Char('0')).arg(instr)),
       start_bp);
   m_bp1->setDisabled(true);
 
-  instr = QString::fromStdString(PowerPC::debug_interface.Disassemble(PC - 4));
+  end_bp = m_code_trace.back().address;
+  instr = QString::fromStdString(PowerPC::debug_interface.Disassemble(end_bp));
   instr.replace(QStringLiteral("\t"), QStringLiteral(" "));
+
   m_bp2->insertItem(
-      0, QStringLiteral("Trace End   %1 : %2").arg((PC - 4), 8, 16, QLatin1Char('0')).arg(instr),
-      (PC - 4));
+      0,
+      ElidedText(QStringLiteral("End %1 : %2").arg((end_bp), 8, 16, QLatin1Char('0')).arg(instr)),
+      end_bp);
   m_bp2->setCurrentIndex(0);
   m_bp2->setDisabled(true);
 
@@ -241,11 +303,13 @@ void CodeTraceDialog::OnRecordTrace(bool checked)
   m_recording = false;
   m_record_trace->setChecked(true);
   m_record_trace->setText(tr("Reset All"));
+  m_record_limit_input->setDisabled(true);
+  m_output_list->setWordWrap(false);
 
-  CodeTraceDialog::DisplayTrace();
+  TraceWidget::DisplayTrace();
 }
 
-const std::vector<TraceOutput> CodeTraceDialog::CodePath(u32 start, u32 end, u32 results_limit)
+const std::vector<TraceOutput> TraceWidget::CodePath(u32 start, u32 end, u32 results_limit)
 {
   // Shows entire trace without filtering if target input is blank.
   std::vector<TraceOutput> tmp_out;
@@ -294,7 +358,7 @@ const std::vector<TraceOutput> CodeTraceDialog::CodePath(u32 start, u32 end, u32
   }
 }
 
-const std::vector<TraceOutput> CodeTraceDialog::GetTraceResults()
+const std::vector<TraceOutput> TraceWidget::GetTraceResults()
 {
   // Setup start and end for a changed range, 0 means use full range.
   u32 start = 0;
@@ -363,8 +427,11 @@ const std::vector<TraceOutput> CodeTraceDialog::GetTraceResults()
     return CT.ForwardTrace(&m_code_trace, track_reg, track_mem, start, end, results_limit, verbose);
 }
 
-void CodeTraceDialog::DisplayTrace()
+void TraceWidget::DisplayTrace()
 {
+  if (m_code_trace.empty())
+    return;
+
   m_output_list->clear();
 
   const std::vector<TraceOutput> trace_out = GetTraceResults();
@@ -383,7 +450,7 @@ void CodeTraceDialog::DisplayTrace()
   m_record_limit_label->setText(
       QStringLiteral("Recorded: %1 of").arg(QString::number(m_code_trace.size())));
   m_results_limit_label->setText(
-      QStringLiteral("Results: %2 of").arg(QString::number(trace_out.size())));
+      QStringLiteral("Results: %1 of").arg(QString::number(trace_out.size())));
 
   // Cleanup and prepare output, then send to Qlistwidget.
   std::regex reg("(\\S*)\\s+(?:(\\S{0,6})\\s*)?(?:(\\S{0,8})\\s*)?(?:(\\S{0,8})\\s*)?(.*)");
@@ -396,7 +463,7 @@ void CodeTraceDialog::DisplayTrace()
     fix_sym.replace(QStringLiteral("\t"), QStringLiteral("  "));
 
     std::regex_search(out.instruction, match, reg);
-    // May need to modify this one.
+    // Prep to potentially modify this string.
     std::string match4 = match.str(4);
 
     if (out.memory_target)
@@ -425,7 +492,7 @@ void CodeTraceDialog::DisplayTrace()
   }
 }
 
-void CodeTraceDialog::OnChangeRange()
+void TraceWidget::OnChangeRange()
 {
   if (!m_change_range->isChecked())
   {
@@ -446,7 +513,7 @@ void CodeTraceDialog::OnChangeRange()
   m_bp2->setEditText(QStringLiteral("%1").arg(bp2, 8, 16, QLatin1Char('0')));
 }
 
-void CodeTraceDialog::UpdateBreakpoints()
+void TraceWidget::UpdateBreakpoints()
 {
   // Leave the recorded start and end range intact.
   if (m_record_trace->isChecked())
@@ -470,11 +537,13 @@ void CodeTraceDialog::UpdateBreakpoints()
     instr.replace(QStringLiteral("\t"), QStringLiteral(" "));
     if (m_record_trace->isChecked())
     {
-      m_bp1->addItem(QStringLiteral("%1 : %2").arg(i.address, 8, 16, QLatin1Char('0')).arg(instr),
-                     i.address);
+      m_bp1->addItem(
+          ElidedText(QStringLiteral("%1 : %2").arg(i.address, 8, 16, QLatin1Char('0')).arg(instr)),
+          i.address);
     }
-    m_bp2->addItem(QStringLiteral("%1 : %2").arg(i.address, 8, 16, QLatin1Char('0')).arg(instr),
-                   i.address);
+    m_bp2->addItem(
+        ElidedText(QStringLiteral("%1 : %2").arg(i.address, 8, 16, QLatin1Char('0')).arg(instr)),
+        i.address);
     index++;
   }
 
@@ -483,7 +552,7 @@ void CodeTraceDialog::UpdateBreakpoints()
     m_bp2->setCurrentIndex(index);
 }
 
-void CodeTraceDialog::InfoDisp()
+void TraceWidget::InfoDisp()
 {
   // i18n: Here, PC is an acronym for program counter, not personal computer.
   new QListWidgetItem(
@@ -491,17 +560,17 @@ void CodeTraceDialog::InfoDisp()
           "Used to track a target register or memory address and its uses.\n\nRecord Trace: "
           "Records "
           "each executed instruction while stepping from "
-          "PC to selected Breakpoint.\n    Required before tracking a target. If backtracing, set "
+          "PC to selected Breakpoint. Required before tracking a target. If backtracing, set "
           "PC "
-          "to how far back you want to trace to.\n    and breakpoint the instruction you want to "
+          "to how far back you want to trace to and breakpoint the instruction you want to "
           "trace backwards.\n\nRegister: Input "
           "examples: "
-          "r5, f31, use f for ps registers or 80000000 for memory.\n    Only takes one value at a "
+          "r5, f31, use f for ps registers or 80000000 for memory. Only takes one value at a "
           "time. Leave blank "
           "to "
           "view complete "
-          "code path. \n\nStarting Address: "
-          "Used to change range before tracking a value.\n    Record Trace's starting address "
+          "code path.\n\nStarting Address: "
+          "Used to change range before tracking a value. Record Trace's starting address "
           "is always "
           "the "
           "PC."
@@ -516,32 +585,40 @@ void CodeTraceDialog::InfoDisp()
           "clear "
           "the "
           "trace "
-          "if starting address is looped through,\n    ensuring only the final loop to the end "
+          "if starting address is looped through, ensuring only the final loop to the end "
           "breakpoint is recorded.\n\nChange Range: Change the start and end points of the trace "
           "for tracking. Loops may make certain ranges buggy.\n\nTrack target: Follows the "
-          "register or memory value through the recorded trace.\n    You don't "
+          "register or memory value through the recorded trace. You don't "
           "have "
           "to "
           "record a trace multiple times if "
           "the "
-          "first trace recorded the area of code you need.\n    You can change any value or option "
+          "first trace recorded the area of code you need. You can change any value or option "
           "and "
-          "press track target again.\n    Changing the second "
+          "press track target again. Changing the second "
           "breakpoint"
           "will let you backtrace from a new location."),
       m_output_list);
 }
 
-void CodeTraceDialog::OnContextMenu()
+void TraceWidget::OnContextMenu()
 {
   QMenu* menu = new QMenu(this);
   menu->addAction(tr("Copy &address"), this, [this]() {
     const u32 addr = m_output_list->currentItem()->data(ADDRESS_ROLE).toUInt();
     QApplication::clipboard()->setText(QStringLiteral("%1").arg(addr, 8, 16, QLatin1Char('0')));
   });
+  menu->addAction(tr("Show &code address"), this, [this]() {
+    const u32 addr = m_output_list->currentItem()->data(ADDRESS_ROLE).toUInt();
+    emit ShowCode(addr);
+  });
   menu->addAction(tr("Copy &memory address"), this, [this]() {
     const u32 addr = m_output_list->currentItem()->data(MEM_ADDRESS_ROLE).toUInt();
     QApplication::clipboard()->setText(QStringLiteral("%1").arg(addr, 8, 16, QLatin1Char('0')));
+  });
+  menu->addAction(tr("&Show memory address"), this, [this]() {
+    const u32 addr = m_output_list->currentItem()->data(MEM_ADDRESS_ROLE).toUInt();
+    emit ShowMemory(addr);
   });
   menu->exec(QCursor::pos());
 }
